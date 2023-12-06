@@ -1,0 +1,14 @@
+Package: cesme
+Type: Package
+Title: High-dimensional Cluster Analysis with Latent Semiparametric Mixture Models
+Version: 0.0.8
+Date: 2022-09-21
+Author: NA
+Maintainer: NA <stat@gmail.com>
+Description: The package implements a new algorithm for high-dimensional model-based clustering via alternating maximizations
+Depends: Matrix
+Imports: stats
+License: GPL-2
+NeedsCompilation: yes
+RoxygenNote: 7.2.3
+Encoding: UTF-8

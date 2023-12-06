@@ -1,0 +1,46 @@
+R package cesme
+  R directory: 
+    cesme.R -- main function npn.clust.bic
+    utilities.R -- all other utility functions
+
+  src directory:
+    fortran code for utility functions and msda functions
+
+R function test.R with function npn.single
+  for test the package. 
+  use sanity.check=TRUE to compare with the original implementation
+
+
+You can install the R package:
+# setwd("~/Dropbox/Programming/GitHub/")
+# system("R CMD build cesme")
+# system("R CMD INSTALL cesme_0.0.1.tar.gz")
+
+Install R package and update the document
+  see code in test.R
+  or 
+# source("~/Dropbox/Programming/GitHub/cesme/R/cesme.R")
+# source("~/Dropbox/Programming/GitHub/cesme/R/utilities.R")
+# system("R CMD SHLIB cesme.f90 -o cesme.so")
+# dyn.load("cesme.so")
+
+
+Re-implement the following utility functions
+1. g.est
+2. dmvnorm_log
+3. alpha.fn
+4. mu.est.fn
+5. z.fn
+Re-implement the main function
+  npn.clust.bic
+Updated msda.f90 for SCAD 
+
+Bug fixed: (search bug fixed)
+1. utilities.R: line 180 z.fn 
+  z.fn may perform a wrong way of computing mu[-1,] + mu[1, ]
+2. cesme.R: line 71
+  wrong dimension of mu.iter = array(0, dim=c(K, p, N * L))
+
+
+
+
