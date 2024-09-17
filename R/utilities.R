@@ -200,12 +200,12 @@ alpha.fn.old = function(k, log.dens = temp.normal, pro.temp = pro.iter[t,]){
 # return f_k(X_i)
 alpha.fn.Rversion <- function(g.tmp, mu.tmp, pro.tmp, gamma.tmp, n, p, K, seq_K = 2:K){
   ret <- matrix(0,n,K)
-  for(i in 1:n){
-    for(k in 2:K){
-      ret[i,k] <- -gamma.tmp[k-1,]%*%(g.tmp[i,]-(mu.tmp[1,]+mu.tmp[k,])/2)/2
-    }
+  g.tmp = t(g.tmp)
+  mu.tmp = t(mu.tmp)
+  for(k in 2:K){
+    ret[,k] <- -gamma.tmp[k-1,]%*%(g.tmp-(mu.tmp[,1]+mu.tmp[,k])/2)
   }
-  exp.ret= exp(ret) + t(matrix(pro.tmp,K,n))
+  exp.ret= exp(ret + t(matrix(log(pro.tmp),K,n)))
   #ret <- log(exp.ret/apply(exp.ret,1,sum))
   ret <- log(exp.ret)
   return(ret)}
