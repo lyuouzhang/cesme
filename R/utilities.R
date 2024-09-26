@@ -200,13 +200,12 @@ alpha.fn.old = function(k, log.dens = temp.normal, pro.temp = pro.iter[t,]){
 # return f_k(X_i)
 alpha.fn.Rversion <- function(g.tmp, mu.tmp, pro.tmp, gamma.tmp, n, p, K, seq_K = 2:K){
   ret <- matrix(0,n,K)
-  g.tmp = t(g.tmp)
-  mu.tmp = t(mu.tmp)
   for(k in 2:K){
-    ret[,k] <- -gamma.tmp[k-1,]%*%(g.tmp-(mu.tmp[,1]+mu.tmp[,k])/2)
+    for(i in 1:n){
+      ret[i,k] <- -gamma.tmp[k-1,]%*%(g.tmp[i,]-(mu.tmp[1,]+mu.tmp[k,])/2)
+    }
   }
   exp.ret= exp(ret + t(matrix(log(pro.tmp),K,n)))
-  #ret <- log(exp.ret/apply(exp.ret,1,sum))
   ret <- log(exp.ret)
   return(ret)}
 
@@ -295,7 +294,7 @@ z.fn.old = function(i,g.tmp,mu.tmp,pro.tmp,gamma.tmp){
 z.fn = function(g.tmp, mu.tmp, pro.tmp, gamma.tmp, n, p, K){
   ret = matrix(.Fortran("z_fn", g.tmp, mu.tmp, pro.tmp, gamma.tmp, 
     n, p, K, ret=double(n*K))$ret, nrow=n, ncol=K)
-  apply(ret, 1, which.min)
+  apply(ret, 1, which.max)
 }
 
 
@@ -437,7 +436,7 @@ initial.kmeans = function(y,K,rho,nstart=100){
     pro.tmp = as.numeric(table(z.initial[i,]) /n.smp)
     delta0 =  1/(4*(n.smp)^0.25 * sqrt(pi * log(n.smp)))
     
-    g.tmp = g.est(y=y, z=z.initial[i,], n=n.smp, p=p, K=K, 
+    g.tmp = g.est.Rversion(y=y, z=z.initial[i,], n=n.smp, p=p, K=K, 
                         pro0=pro.tmp, delta0=delta0)
     g.tmp = apply(g.tmp, 2, scale)
     
@@ -540,7 +539,7 @@ initial.sc = function(y,K,rho,nstart=100){
     pro.tmp = as.numeric(table(z.initial[i,]) /n.smp)
     delta0 =  1/(4*(n.smp)^0.25 * sqrt(pi * log(n.smp)))
     
-    g.tmp = g.est(y=y, z=z.initial[i,], n=n.smp, p=p, K=K, 
+    g.tmp = g.est.Rversion(y=y, z=z.initial[i,], n=n.smp, p=p, K=K, 
                   pro0=pro.tmp, delta0=delta0)
     g.tmp = apply(g.tmp, 2, scale)
     
