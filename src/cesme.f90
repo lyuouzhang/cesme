@@ -62,7 +62,7 @@ SUBROUTINE alpha_fn(g, mu, pro, gam, n, p, K, ret)
   INTEGER :: i, j
   DOUBLE PRECISION :: mu_sum (p, K-1), log_pro (K-1)
   log_pro = Log(pro(2:K)) 
-  ret(:, 1) = Log(pro(1))
+  ret(:, 1) = - Log(pro(1))
   DO j = 1, K-1
     mu_sum(:, j) = (mu(j+1, :) + mu(1, :)) * 0.5D0
     DO i = 1, n
@@ -91,7 +91,7 @@ SUBROUTINE z_fn(g, mu, pro, gam, n, p, K, ret)
   INTEGER :: i, j
   DOUBLE PRECISION :: mu_sum (p, K-1), log_pro (K-1)
   log_pro = Log(pro(2:K)) 
-  ret(:, 1) = Log(pro(1))
+  ret(:, 1) = - Log(pro(1))
   DO j = 1, K-1
     mu_sum(:, j) = (mu(j+1, :) + mu(1, :)) * 0.5D0
     DO i = 1, n
