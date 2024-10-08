@@ -93,9 +93,13 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
   gamma2.iter = array(0, dim=c(p, K-1, L*S))
   rho.iter = c(C0 + C2 * sqrt(log(p)*n.inv), rep(0,N))
   
+  ## initialized by SC
+  if(is.null(z.initial)||is.null(mu.initial)){
+    sc.result = initial.sc(y, K, nstart=kmnstart)
+  }
+  
   if(is.null(z.initial)){
-    ## initialized by SC
-    z.iter[1,,1] = as.integer(initial.sc(y, K, rho.iter[1], nstart=kmnstart))
+    z.iter[1,,1] = sc.result$z.initial
   }else{
     z.iter[1,,1] = z.initial
   }
@@ -156,30 +160,22 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
   g.iter[,,1] = t((t(g.iter[,,1])-apply(t(g.iter[,,1]),1,mean))/(apply(t(g.iter[,,1]),1,sd)+1e-4))
 
   ## ## starting value for mu
-  center2.g = g.iter[,,1]
-  if(is.null((mu.initial))){
-    for (k in seq(K)) {
-      if (sum(z.iter[1,,1]==k) == 1L) {
-        mu.iter[k,,1] = g.iter[z.iter[1,,1] == k,,1]
-      } else {
-        mu.iter[k,,1] = colMeans(g.iter[z.iter[1,,1] == k,,1])
-        center2.g[z.iter[1,,1] == k, ] = apply(center2.g[z.iter[1,,1] == k, ], 
-                                               2, scale, scale=FALSE)
-      }
-    }
+  #center2.g = g.iter[,,1]
+  if(is.null(mu.initial)){
+    mu.iter[,,1] = sc.result$mu.initial
   }else{
     mu.iter[,,1] = mu.initial
   }
   
   ## starting value for variance
   #sigma.iter[,,1] = (n.smp-1L) * cov(center2.g) * n.inv
+  alpha.int = outer(z.iter[1,,1],1:K,'==')*1
   sigma.iter[,,1] = sigma.est.fn(mu=mu.iter[,,1], 
-                                 g=g.iter[,,1], alpha=matrix(pro.iter[1,],nrow=n.smp,ncol=K,byrow = TRUE), 
+                                 g=g.iter[,,1], alpha=alpha.int, 
                                  n=n.smp, p=p, K=K, n.inv=n.inv)
   ## apply(simplify2array(sapply(c(1:n.smp), 
   ##   function(index){return((center2.g[index,]%*%t(center2.g[index,]))/n.smp)}, 
   ##   simplify = F)), c(1:2), sum)
-  
   
   ### start iteration
   for (iter in seq(N - 1L)) {
@@ -319,54 +315,44 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
           logw.tmp = alpha.fn(g.tmp=g.iter[,,1], mu.tmp=mu.iter[,,i],
                               pro.tmp=pro.iter[i,], gamma.tmp=t(gamma2.iter[,,(i-1)*L+l]),
                               n=n.smp, p=p, K=K)
-          
           w.tmp <- exp(logw.tmp)
           w.tmp[is.na(w.tmp)] <- 0
           w.tmp[is.infinite(w.tmp)] <- 10^6
           alpha.temp[l,,] = w.tmp/rowSums(w.tmp)
           pro.tmp = colMeans(alpha.temp[l,,])
           z2.iter[i,,l] = z.fn(g.tmp=g.iter[,,1], mu.tmp=mu.iter[,,i],
-                               pro.tmp=pro.tmp, gamma.tmp=t(gamma2.iter[,,(i-1)*L+l]),
+                               pro.tmp=pro.tmp, gamma.tmp=-t(gamma2.iter[,,(i-1)*L+l]),
                                n=n.smp, p=p, K=K)
           
           if((length(unique(z2.iter[i,,l])) < K) || (min(table(z2.iter[i,,l])) < 2L)){
-            #miss_z = setdiff(seq(K), unique(z2.iter[i,,l]))
-            #large_z = which(z2.iter[i,,l]==which.max(table(z2.iter[i,,l])))
-            #for (k in miss_z) {
-            #  z2.iter[i,large_z[k],l] = k
-            #  z2.iter[i,large_z[k+K],l] = k
-            #}
-            #z.tmp = z2.iter[i,,l]
-            #z.tmp[which(z.tmp==which.max(table(z.tmp)))] = 
-            #  rep(1:K,each = ceiling(max(table(z.tmp))/K))[seq(max(table(z.tmp)))]
-            #z2.iter[i,,l] = z.tmp
             z2.iter[i,,l] = z.iter[iter,,1]
+          }else{
+            tt2 = Sys.time()
+            if (sanity.check) print("new_alpha.fn")
+            if (sanity.check) print(ttt <- tt2 - tt1)
+            if (sanity.check){ if( ttt > 1) { 
+              print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            }}
+            
+            #BIC
+            
+            llh = llh0
+            #llh = sum(table(z2.iter[i,,l])*log(pro.tmp))
+            if (sanity.check) print("new_dmvnorm_log")
+            if (sanity.check) print(ttt <- tt2 - tt1)
+            if (sanity.check){ if( ttt > 1) { 
+              print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+            }}
+            
+            for(k in 1:K){
+              yid = z2.iter[i,,l]==k
+              ## ytmp = g.iter[yid,,iter]
+              llh = llh + sum(logw.tmp[yid,k])
+            }  
+            
+            bic3.iter[i,l] = -2 * llh + log(n.smp) * outlist$df[l] + (log(n.smp)+log(p)) * (K-1)
           }
           
-          tt2 = Sys.time()
-          if (sanity.check) print("new_alpha.fn")
-          if (sanity.check) print(ttt <- tt2 - tt1)
-          if (sanity.check){ if( ttt > 1) { 
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-          }}
-          
-          #BIC
-          
-          llh = llh0
-          #llh = sum(table(z2.iter[i,,l])*log(pro.tmp))
-          if (sanity.check) print("new_dmvnorm_log")
-          if (sanity.check) print(ttt <- tt2 - tt1)
-          if (sanity.check){ if( ttt > 1) { 
-            print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-          }}
-          
-          for(k in 1:K){
-            yid = z2.iter[i,,l]==k
-            ## ytmp = g.iter[yid,,iter]
-            llh = llh + sum(logw.tmp[yid,k])
-          }  
-          
-          bic3.iter[i,l] = -2 * llh + log(n.smp) * outlist$df[l] + (log(n.smp)+log(p)) * (K-1)
         }
       }
       
@@ -375,7 +361,52 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
       #best l
       if(min(bic3.iter[i,])==Inf){
         warning("Crho too large. Try some smaller value")
+        
+        l = fit$nalam
+        gamma2.iter[,,(i-1)*L+l] = t(delta)
+        tt1 = Sys.time()
+        logw.tmp = alpha.fn(g.tmp=g.iter[,,1], mu.tmp=mu.iter[,,i],
+                            pro.tmp=pro.iter[i,], gamma.tmp=t(gamma2.iter[,,(i-1)*L+l]),
+                            n=n.smp, p=p, K=K)
+        
+        w.tmp <- exp(logw.tmp)
+        w.tmp[is.na(w.tmp)] <- 0
+        w.tmp[is.infinite(w.tmp)] <- 10^6
+        alpha.temp[l,,] = w.tmp/rowSums(w.tmp)
+        pro.tmp = colMeans(alpha.temp[l,,])
+        z2.iter[i,,l] = z.fn(g.tmp=g.iter[,,1], mu.tmp=mu.iter[,,i],
+                             pro.tmp=pro.tmp, gamma.tmp=t(gamma2.iter[,,(i-1)*L+l]),
+                             n=n.smp, p=p, K=K)
+        
+        if((length(unique(z2.iter[i,,l])) < K) || (min(table(z2.iter[i,,l])) < 2L)){
+          z2.iter[i,,l] = z.iter[iter,,1]
+        }
+        tt2 = Sys.time()
+        if (sanity.check) print("new_alpha.fn")
+        if (sanity.check) print(ttt <- tt2 - tt1)
+        if (sanity.check){ if( ttt > 1) { 
+          print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        }}
+        
+        #BIC
+        
+        llh = llh0
+        #llh = sum(table(z2.iter[i,,l])*log(pro.tmp))
+        if (sanity.check) print("new_dmvnorm_log")
+        if (sanity.check) print(ttt <- tt2 - tt1)
+        if (sanity.check){ if( ttt > 1) { 
+          print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+        }}
+        
+        for(k in 1:K){
+          yid = z2.iter[i,,l]==k
+          ## ytmp = g.iter[yid,,iter]
+          llh = llh + sum(logw.tmp[yid,k])
+        }  
+        
+        bic3.iter[i,l] = -2 * llh + log(n.smp) * p + (log(n.smp)+log(p)) * (K-1)
       }
+
       l = max(which.min(bic3.iter[i,]), 1)
       l.iter[i] = l
       
@@ -552,13 +583,7 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
       #  iter=iter-1
       #  break
       #}
-      if(sum(abs(g.iter[,,2] - g.iter[,,1]))/sum(abs(g.iter[,,1]))+
-         sum(abs(mu.iter[,,i+1] - mu.iter[,,1]))/
-         (sum(abs(mu.iter[,,1])) + 1)+ 
-         sum(abs(sigma.iter[,,i+1]-sigma.iter[,,1]))/
-         sum(abs(sigma.iter[,,1])) + 
-         sum(abs(pro.iter[i+1,] - pro.iter[1,]))/
-         sum(pro.iter[1,]) < 1e-2) {
+      if(sum(abs(g.iter[,,2] - g.iter[,,1]))/sum(abs(g.iter[,,1]))< 1e-2) {
         break
       }
     }
@@ -573,7 +598,7 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
     
   }
    return(list(z=z.iter[iter+1,,1], mu=mu.iter[,,1], sigma=sigma.iter[,,1], g=g.iter[,,1], gamma=gamma.iter[,,(iter-1)*L+l2.iter[iter]],
-    Crho=Crho[l2.iter[iter]],bic1=bic1.iter, bic2= bic2.iter, time.iter=time.iter, iter=iter))
+    pro=pro.iter[1,],Crho=Crho[l2.iter[iter]],bic1=bic1.iter[iter,], bic2= bic2.iter[iter,], time.iter=time.iter[,iter], iter=iter))
 }
 
 
