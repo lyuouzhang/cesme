@@ -294,7 +294,7 @@ z.fn.old = function(i,g.tmp,mu.tmp,pro.tmp,gamma.tmp){
 z.fn = function(g.tmp, mu.tmp, pro.tmp, gamma.tmp, n, p, K){
   ret = matrix(.Fortran("z_fn", g.tmp, mu.tmp, pro.tmp, gamma.tmp, 
     n, p, K, ret=double(n*K))$ret, nrow=n, ncol=K)
-  apply(ret, 1, which.max)
+  apply(ret, 1, which.min)
 }
 
 
@@ -512,106 +512,15 @@ initial.kmeans = function(y,K,rho,nstart=100){
   
 }
 
-initial.sc = function(y,K,rho,nstart=100){
-  p = dim(y)[2]
-  n.smp = dim(y)[1]
-  Crho = seq(0.1,2,0.1)
-  L = length(Crho)
+initial.sc = function(y,K,nstart=10){
+  A = t(y)%*%y
+  eig.A = eigen(A)
+  U0 = eig.A$vectors[,1:K]
+  km.result = kmeans(y%*%U0,centers = K,nstart = nstart)
+  sc.select = km.result$cluster
+  sc.mean = t(U0%*%km.result$centers)
   
-  nk = K - 1L
-  vnames = paste("V", seq(p), sep = "")
-  maxit_msda = as.integer(1e+3)
-  eps_msda = as.double(1e-4)
-  dfmax = as.integer(n.smp)
-  pmax = as.integer(min(dfmax * 2 + 20, p))
-  
-  z.initial = matrix(0,nstart,n.smp)
-  bic1.iter = rep(0,nstart)
-  
-  for(i in 1:nstart){
-    z.initial[i,] = as.numeric(specc(y, centers=K))
-    if ((length(unique(z.initial[i,])) < K) || (min(table(z.initial[i,])) < 2L)) {
-      for (k in seq.int(K)) {
-        z.initial[i,k] = k
-        z.initial[i,k+K] = k
-      }
-    }
-    pro.tmp = as.numeric(table(z.initial[i,]) /n.smp)
-    delta0 =  1/(4*(n.smp)^0.25 * sqrt(pi * log(n.smp)))
-    
-    g.tmp = g.est.Rversion(y=y, z=z.initial[i,], n=n.smp, p=p, K=K, 
-                  pro0=pro.tmp, delta0=delta0)
-    g.tmp = apply(g.tmp, 2, scale)
-    
-    center2.g = g.tmp
-    mu.tmp = matrix(0,K,p)
-    for (k in seq(K)) {
-      mu.tmp[k,] = colMeans(g.tmp[z.initial[i,] == k,])
-      center2.g[z.initial[i,] == k, ] = apply(center2.g[z.initial[i,] == k, ], 
-                                              2, scale, scale=FALSE)
-    }
-    
-    sigma = (n.smp-1L) * cov(center2.g) /n.smp
-    
-    delta = crossprod(mu.tmp, rbind(-1,diag(1,K-1)))
-    lambda = rho * Crho
-    lambda.factor = ifelse((n.smp - K) <= p, 0.2, 0.001)
-    ulam = as.double(rev(sort(lambda)))
-    pfmat = matrix(1, ncol=L, nrow=p)
-    
-    fit = .Fortran("msda_ncx", obj=double(L), nk=nk, p=p, 
-                   sigma=as.double(sigma), delta=as.double(delta), pfmat=pfmat, 
-                   dfmax=dfmax, pmax=pmax, nlam=L, flmin=1, ulam=ulam, eps=eps_msda, 
-                   maxit=maxit_msda, sml=as.double(1e-06), verbose=as.integer(FALSE), 
-                   nalam=integer(1), theta=double(pmax * nk * L), itheta=integer(pmax), 
-                   ntheta=integer(L), alam=double(L), npass=integer(1), 
-                   jerr=integer(1))
-    outlist = formatoutput(fit, maxit_msda, pmax, p, vnames, nk)
-    
-    L_ncx = fit$nalam
-    for (l in seq(L_ncx)) {
-      btnm = apply(outlist$theta[[l]], 1, function(x) sqrt(sum(x * x)) )
-      pfmat[ ,l] = as.vector(derivative.pen(abs(btnm), ulam[l]))
-    }
-    ulam_ncvx = rep(1, L_ncx)
-    
-    ## ncvx penalization
-    fit = .Fortran("msda_ncx", obj=double(L_ncx), nk=nk, p=p, 
-                   sigma=as.double(sigma), delta=as.double(delta), pfmat=pfmat[, seq(L_ncx)], 
-                   dfmax=dfmax, pmax=pmax, nlam=L_ncx, flmin=1, ulam=ulam_ncvx, eps=eps_msda, 
-                   maxit=maxit_msda, sml=as.double(1e-06), verbose=as.integer(FALSE), 
-                   nalam=integer(1), theta=double(pmax * nk * L_ncx), itheta=integer(pmax), 
-                   ntheta=integer(L_ncx), alam=double(L_ncx), npass=integer(1), 
-                   jerr=integer(1))
-    outlist = formatoutput(fit, maxit_msda, pmax, p, vnames, nk)
-    
-    bic2.iter = rep(0,fit$nalam)
-    
-    for(l in seq(fit$nalam)){
-      for(k in seq(K-1)){
-        gamma2.tmp = t(outlist$theta[[fit$nalam+1-l]][,k])
-      } 
-      tt1 = Sys.time()
-      logw.tmp = -abs(alpha.fn(g.tmp=g.tmp, mu.tmp=mu.tmp,
-                               pro.tmp=pro.tmp, gamma.tmp=t(gamma2.tmp),
-                               n=n.smp, p=p, K=K))
-      #BIC
-      llh = 0
-      
-      for(k in 1:K){
-        yid = z.initial[i,]==k
-        llh = llh + sum(logw.tmp[yid,k])
-      }  
-      
-      bic2.iter[l] = -2 * llh + log(n.smp) * outlist$df[fit$nalam+1-l]
-    }
-    
-    bic1.iter[i] = min(bic2.iter)
-  }
-  
-  i = max(which.min(bic1.iter), 1)
-  
-  return(z.initial[i,])
+  return(list(z.initial=sc.select,mu.initial=sc.mean))
   
 }
 
