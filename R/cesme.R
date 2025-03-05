@@ -40,15 +40,15 @@
 
 ##cesme with SCAD
 #BIC twice
-npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=NULL, mu.initial=NULL,
-  maxit_msda=as.integer(1e+3), eps_msda=1e-4, ncvx=TRUE,Crho = 2^seq(4,-4,-1),
-  sanity.check=FALSE, lam_max_print=FALSE, g.method=1, kmnstart=100) {
+cesme = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=NULL, mu.initial=NULL,
+                 maxit_msda=as.integer(1e+3), eps_msda=1e-4, ncvx=TRUE,Crho = 2^seq(4,-4,-1),
+                 sanity.check=FALSE, lam_max_print=FALSE, g.method=1, kmnstart=10) {
   
   # g.method = 1 empirical cdf
   # g.method = 2 shaped restricted regression
   # g.method = 3 hybrid estimation
   # g.method = 4 trivial identical mapping
-
+  
   ## set parameters
   N = as.integer(N)
   K = as.integer(K)
@@ -61,7 +61,9 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
   #Crho = c(seq(0.2,1.1,0.3),seq(1.4,2,0.2),seq(2.1,3,0.1))
   Crho = sort(Crho,decreasing = TRUE)
   L = length(Crho)
-
+  # if candidates of lambda are too large
+  Crho.warning = rep(0,N)
+  
   ## setting for msda
   nk = K - 1L
   vnames = paste("V", seq(p), sep = "")
@@ -72,12 +74,21 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
   eps_msda = as.double(eps_msda)
   dfmax = as.integer(n.smp)
   pmax = as.integer(min(dfmax * 2 + 20, p))
-
+  
   ## ## start points
   z.iter = array(0L, dim=c(N, n.smp, L))
   z2.iter = array(0L, dim=c(S, n.smp, L))
   mu.iter = array(0, dim=c(K, p, S+1))
-  sigma.iter = array(0, dim=c(p, p, S+1))
+  # too large covariance
+  if(p<=5000){
+    sigma.iter = array(0, dim=c(p, p, S+1))
+  }else{
+    sigma.iter = list()
+    for(i in 1:(S+1)){ 
+      sigma.iter = c(sigma.iter, big.matrix(p, p, type = "short", init = 0))
+    }
+  }
+  
   g.iter = array(0, dim=c(n.smp, p, 2))
   pro.iter = matrix(0, ncol=K, nrow=S+1)
   
@@ -85,12 +96,12 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
   bic2.iter = matrix(Inf, ncol=L, nrow=N)
   l2.iter = rep(0,N)
   
-
+  
   time.iter = matrix(0, 2, N)
   
   ## sparse
   gamma.iter = array(0, dim=c(p, K-1, N*L))
-  gamma2.iter = array(0, dim=c(p, K-1, L*S))
+  
   rho.iter = c(C0 + C2 * sqrt(log(p)*n.inv), rep(0,N))
   
   ## initialized by SC
@@ -103,7 +114,7 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
   }else{
     z.iter[1,,1] = z.initial
   }
-
+  
   if ((length(unique(z.iter[1,,1])) < K) || (min(table(z.iter[1,,1])) < 2L)) {
     miss_z = setdiff(seq(K), unique(z.iter[1,,1]))
     large_z = which(z.iter[1,,1]==which.max(table(z.iter[1,,1])))
@@ -122,12 +133,12 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
   ## 1/(4*(n.smp)^0.25 * sqrt(pi * log(n.smp)))
   
   alpha.temp = array(0, dim=c(L+1, n.smp, K))
-
+  
   if(g.method == 1){
     ## estimate monotone function empirically
     tt1 = Sys.time()
     g.iter[,,1] = g.est.Rversion(y=y, z=z.iter[1,,1], n=n.smp, p=p, K=K, 
-                        pro0=pro.iter[1,], delta0=delta0)
+                                 pro0=pro.iter[1,], delta0=delta0)
     tt2 = Sys.time()
     if (sanity.check) print("new_g.iter_cdf")
     if (sanity.check) print(ttt <- tt2 - tt1)
@@ -139,10 +150,10 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
   }
   
   
-    
-
-
-
+  
+  
+  
+  
   ############################################################################
   # if (sanity.check) {
   #   ## print("check")
@@ -158,7 +169,7 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
   ############################################################################
   ### scale it
   g.iter[,,1] = t((t(g.iter[,,1])-apply(t(g.iter[,,1]),1,mean))/(apply(t(g.iter[,,1]),1,sd)+1e-4))
-
+  
   ## ## starting value for mu
   #center2.g = g.iter[,,1]
   if(is.null(mu.initial)){
@@ -170,9 +181,16 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
   ## starting value for variance
   #sigma.iter[,,1] = (n.smp-1L) * cov(center2.g) * n.inv
   alpha.int = outer(z.iter[1,,1],1:K,'==')*1
-  sigma.iter[,,1] = sigma.est.fn(mu=mu.iter[,,1], 
-                                 g=g.iter[,,1], alpha=alpha.int, 
-                                 n=n.smp, p=p, K=K, n.inv=n.inv)
+  if(p<=5000){
+    sigma.iter[,,1] = sigma.est.fn(mu=mu.iter[,,1], 
+                                   g=g.iter[,,1], alpha=alpha.int, 
+                                   n=n.smp, p=p, K=K, n.inv=n.inv)
+  }else{
+    sigma.est.fn.large(mu=mu.iter[seq(K),,1], 
+                       g=g.iter[,,1], alpha=alpha.int, 
+                       n=n.smp, p=p, K=K, n.inv=n.inv)
+  }
+  
   ## apply(simplify2array(sapply(c(1:n.smp), 
   ##   function(index){return((center2.g[index,]%*%t(center2.g[index,]))/n.smp)}, 
   ##   simplify = F)), c(1:2), sum)
@@ -180,19 +198,21 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
   ### start iteration
   for (iter in seq(N - 1L)) {
     ## if (iter %% 5 == 0)
-
+    
     if (sanity.check) { 
       print("iter")    
       print(iter)  
     }  
-    l = 1
+    #l = 1
     #ten-step ECM
     
-    i = 1
+    #i = 1
     
     bic3.iter = matrix(Inf, ncol=L, nrow=S)
     l.iter = rep(0,S)
-  
+    gamma2.iter = array(0, dim=c(p, K-1, L*S))
+    
+    
     for(i in seq(S)){
       ### E-step
       
@@ -215,15 +235,20 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
       #ginv_sigma = eig_sigma$vector[,which(eig_sigma_value>1e-6)]%*%
       #  diag(1/eig_sigma_value[which(eig_sigma_value>1e-6)])%*%
       #  t(eig_sigma$vector[,which(eig_sigma_value>1e-6)])
-        
-                       
+      
+      
       
       #########################################################################
       ## apply SCAD to get posterior
-
-      sigma = sigma.iter[,,i]
+      
+      if(p<=5000){
+        sigma = sigma.iter[,,i]
+      }else{
+        sigma.iter[[i]]
+      }
+      
       dSigma = diag(sigma)+1e-2
-      delta = crossprod(rbind(-1,diag(1,K-1)),mu.iter[,,i])
+      delta = crossprod(rbind(1,diag(-1,K-1)),mu.iter[,,i])
       #scale_delta = sqrt(apply(delta^2,2,mean)) + 1e-4
       #delta = t(t(delta)/scale_delta)
       lambda = rho.iter[iter] * Crho
@@ -249,7 +274,7 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
       ### local linear algorithm
       ## lasso-initial
       tt1 = Sys.time()
-
+      
       fit = .Fortran("msda_ncx", obj=double(L), nk=nk, p=p, 
                      sigma=as.double(sigma), delta=as.double(delta), pfmat=pfmat, 
                      dfmax=dfmax, pmax=pmax, nlam=L, flmin=1, ulam=ulam, eps=eps_msda, 
@@ -259,7 +284,7 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
                      jerr=integer(1))
       outlist = formatoutput(fit, maxit_msda, pmax, p, vnames, nk)
       if(sum(abs(outlist$theta[[length(outlist$lambda)]]))<1e-2){
-        warning("Crho too large. Try some smaller value")
+        Crho.warning[iter] = 1
       }
       
       tt2 = Sys.time()
@@ -268,8 +293,8 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
       if (sanity.check){ if( ttt > 1) { 
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
       }}
-        
-
+      
+      
       if (ncvx) {
         ## compute the weights according to the local linear algorithm
         L_ncx = fit$nalam
@@ -294,13 +319,13 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
         if (sanity.check){ if( ttt > 1) { 
           print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         }}
-          
+        
         outlist = formatoutput(fit, maxit_msda, pmax, p, vnames, nk)
       }
       
       llh0 = -log(prod(dSigma))/2-sum((g.iter[,,1]-mu.iter[1,,i])^2/dSigma)/2
       #llh0 = 0
-     
+      
       ############################################################################
       for(l in seq(fit$nalam)){
         
@@ -315,13 +340,13 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
           logw.tmp = alpha.fn(g.tmp=g.iter[,,1], mu.tmp=mu.iter[,,i],
                               pro.tmp=pro.iter[i,], gamma.tmp=t(gamma2.iter[,,(i-1)*L+l]),
                               n=n.smp, p=p, K=K)
-          w.tmp <- exp(logw.tmp)
+          w.tmp <- exp(-logw.tmp)
           w.tmp[is.na(w.tmp)] <- 0
           w.tmp[is.infinite(w.tmp)] <- 10^6
           alpha.temp[l,,] = w.tmp/rowSums(w.tmp)
           pro.tmp = colMeans(alpha.temp[l,,])
           z2.iter[i,,l] = z.fn(g.tmp=g.iter[,,1], mu.tmp=mu.iter[,,i],
-                               pro.tmp=pro.tmp, gamma.tmp=-t(gamma2.iter[,,(i-1)*L+l]),
+                               pro.tmp=pro.tmp, gamma.tmp=t(gamma2.iter[,,(i-1)*L+l]),
                                n=n.smp, p=p, K=K)
           
           if((length(unique(z2.iter[i,,l])) < K) || (min(table(z2.iter[i,,l])) < 2L)){
@@ -345,12 +370,12 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
             }}
             
             for(k in 1:K){
-              yid = z2.iter[i,,l]==k
+              #yid = z2.iter[i,,l]==k
               ## ytmp = g.iter[yid,,iter]
-              llh = llh + sum(logw.tmp[yid,k])
+              llh = llh + sum(-logw.tmp[,k]*pro.tmp[k])
             }  
             
-            bic3.iter[i,l] = -2 * llh + log(n.smp) * outlist$df[l] + (log(n.smp)+log(p)) * (K-1)
+            bic3.iter[i,l] = -2 * llh + log(max(n.smp,p)) * (outlist$df[l]+K*p+p^2)
           }
           
         }
@@ -359,54 +384,6 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
       time2 = Sys.time()
       
       #best l
-      if(min(bic3.iter[i,])==Inf){
-        warning("Crho too large. Try some smaller value")
-        
-        l = fit$nalam
-        gamma2.iter[,,(i-1)*L+l] = t(delta)
-        tt1 = Sys.time()
-        logw.tmp = alpha.fn(g.tmp=g.iter[,,1], mu.tmp=mu.iter[,,i],
-                            pro.tmp=pro.iter[i,], gamma.tmp=t(gamma2.iter[,,(i-1)*L+l]),
-                            n=n.smp, p=p, K=K)
-        
-        w.tmp <- exp(logw.tmp)
-        w.tmp[is.na(w.tmp)] <- 0
-        w.tmp[is.infinite(w.tmp)] <- 10^6
-        alpha.temp[l,,] = w.tmp/rowSums(w.tmp)
-        pro.tmp = colMeans(alpha.temp[l,,])
-        z2.iter[i,,l] = z.fn(g.tmp=g.iter[,,1], mu.tmp=mu.iter[,,i],
-                             pro.tmp=pro.tmp, gamma.tmp=t(gamma2.iter[,,(i-1)*L+l]),
-                             n=n.smp, p=p, K=K)
-        
-        if((length(unique(z2.iter[i,,l])) < K) || (min(table(z2.iter[i,,l])) < 2L)){
-          z2.iter[i,,l] = z.iter[iter,,1]
-        }
-        tt2 = Sys.time()
-        if (sanity.check) print("new_alpha.fn")
-        if (sanity.check) print(ttt <- tt2 - tt1)
-        if (sanity.check){ if( ttt > 1) { 
-          print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        }}
-        
-        #BIC
-        
-        llh = llh0
-        #llh = sum(table(z2.iter[i,,l])*log(pro.tmp))
-        if (sanity.check) print("new_dmvnorm_log")
-        if (sanity.check) print(ttt <- tt2 - tt1)
-        if (sanity.check){ if( ttt > 1) { 
-          print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-        }}
-        
-        for(k in 1:K){
-          yid = z2.iter[i,,l]==k
-          ## ytmp = g.iter[yid,,iter]
-          llh = llh + sum(logw.tmp[yid,k])
-        }  
-        
-        bic3.iter[i,l] = -2 * llh + log(n.smp) * p + (log(n.smp)+log(p)) * (K-1)
-      }
-
       l = max(which.min(bic3.iter[i,]), 1)
       l.iter[i] = l
       
@@ -417,25 +394,33 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
       ## mu.iter[,,(iter-1)*S+i+1] = t(sapply(1:K, mu.est.fn, y = g.iter[,,iter], 
       ##   alpha = alpha.temp[(iter-1)*S+i+1,,]))
       mu.iter[,,i+1] = crossprod(alpha.temp[l,,], 
-        g.iter[,,1]) / colSums(alpha.temp[l,,])
-
+                                 g.iter[,,1]) / colSums(alpha.temp[l,,])
+      
       ## M-step  part 3: update cluster covariance sigma
       # if (sanity.check) {
       #   ## print("check")        
       #   tmp = sigma.iter[,,i+1] 
       # } 
       tt1 = Sys.time()
-      sigma.iter[,,i+1] = 
-        sigma.est.fn(mu=mu.iter[seq(K),,i+1], 
-          g=g.iter[,,1], alpha=alpha.temp[l,,seq(K)], 
-          n=n.smp, p=p, K=K, n.inv=n.inv)
+      if(p<=5000){
+        sigma.iter[,,i+1] = 
+          sigma.est.fn(mu=mu.iter[seq(K),,i+1], 
+                       g=g.iter[,,1], alpha=alpha.temp[l,,seq(K)], 
+                       n=n.smp, p=p, K=K, n.inv=n.inv)
+      }else{
+        sigma.iter[[i+1]] = 
+          sigma.est.fn.large(mu=mu.iter[seq(K),,i+1], 
+                             g=g.iter[,,1], alpha=alpha.temp[l,,seq(K)], 
+                             n=n.smp, p=p, K=K, n.inv=n.inv)
+      }
+      
       tt2 = Sys.time()
       if (sanity.check) print("new_sigma.est.fn")
       if (sanity.check) print(ttt <- tt2 - tt1)
       if (sanity.check){ if( ttt > 1) { 
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
       }}
-  ############################################################################
+      ############################################################################
       # if (sanity.check) {
       #   ## print("check")  
       #   tt1 = Sys.time()
@@ -452,12 +437,12 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
       #   print("------------------------------------")
       #   if(max(abs(tmp - sigma.iter[,,i+1])) > 1.0e-5) stop("sigma.iter")
       # }
-  ############################################################################
+      ############################################################################
       ## BIC
       bic1.iter[iter,i] = bic3.iter[i,l]
       
       time3 = Sys.time()
-
+      
       ### stop inner ECM iteration if BIC increases
       if (i > 1 && bic1.iter[iter, i] >= bic1.iter[iter, i-1]){
         if(i<S){
@@ -466,10 +451,15 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
         break
       }
       
-
+      
     }
-  ############################################################################
+    ############################################################################
     #best i
+    if(min(bic1.iter[iter, ])==Inf){
+      if(iter>1){
+        break
+      }
+    }
     i = max(which.min(bic1.iter[iter, ]), 1)
     
     #let gamma and z be best among inner iteration
@@ -481,8 +471,8 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
     #store bic for best i
     bic2.iter[iter,] = bic3.iter[i,]
     
-
-
+    
+    
     ## rho
     rho.iter[iter+1] = kap * rho.iter[iter] + C2 * sqrt(log(p) * n.inv)
     
@@ -490,7 +480,7 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
       ## estimate monotone function empirically
       tt1 = Sys.time()
       g.iter[,,2] = g.est.Rversion(y=y, z=z.iter[iter+1,,1], n=n.smp, p=p, K=K, 
-                          pro0 = pro.iter[i+1,], delta0=delta0)
+                                   pro0 = pro.iter[i+1,], delta0=delta0)
       tt2 = Sys.time()
       if (sanity.check) print("new_g.est_cdf")
       if (sanity.check) print(ttt <- tt2 - tt1)
@@ -515,7 +505,7 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
       tt1 = Sys.time()
       
       g.iter[,,2] = g.est.alt2(y=y, z=z.iter[iter+1,,1], mu=mu.iter[,,i+1], n=n.smp, p=p,
-        sanity.check=sanity.check)
+                               sanity.check=sanity.check)
       tt2 = Sys.time()
       if (sanity.check) print("new_g.iter_srr")
       if (sanity.check) print(ttt <- tt2 - tt1)
@@ -532,23 +522,23 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
         selected = which(apply((gamma.iter[,,(iter-1)*L+l.iter[i]]!=0),1,sum)!=0)
       }
       
-
-        
+      
+      
       unselected = setdiff(1:p,selected)
-
-
+      
+      
       if (length(selected) > 0) {
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
         print(c("selected ",length(selected)))
         print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-
+        
       }  
-
-
-    
+      
+      
+      
       if(length(unselected)!=0){
         g.iter[,unselected,2] = g.est.Rversion(y=as.matrix(y[,unselected]), z=z.iter[iter+1,,1], n=n.smp, p=length(unselected), K=K, 
-                          pro0 = pro.iter[i+1,], delta0=delta0)
+                                               pro0 = pro.iter[i+1,], delta0=delta0)
         if (sanity.check) print(c("unselected ",length(unselected)))
       }
       
@@ -583,22 +573,38 @@ npn.clust.bic = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=
       #  iter=iter-1
       #  break
       #}
-      if(sum(abs(g.iter[,,2] - g.iter[,,1]))/sum(abs(g.iter[,,1]))< 1e-2) {
+      if(sum(abs(g.iter[,,2] - g.iter[,,1]))/sum(abs(g.iter[,,1]))< 1e-2||sum(abs(g.iter[,,2] - g.iter[,,1]))/sum(abs(g.iter[,,1]))>mse.tmp) {
         break
       }
     }
     
-    
+    mse.tmp = sum(abs(g.iter[,,2] - g.iter[,,1]))/sum(abs(g.iter[,,1]))
     ### let the update with smallest BIC be the starting point of next iteration
     mu.iter[,,1] = mu.iter[,,i+1]
     pro.iter[1, ] = pro.iter[i+1, ]
-    sigma.iter[,,1] = sigma.iter[,,i+1]
+    if(p<=5000){
+      sigma.iter[,,1] = sigma.iter[,,i+1]
+    }else{
+      sigma.iter[[1]] = sigma.iter[[i+1]]
+    }
+    
     g.iter[,,1] = g.iter[,,2]
     
-    
   }
-   return(list(z=z.iter[iter+1,,1], mu=mu.iter[,,1], sigma=sigma.iter[,,1], g=g.iter[,,1], gamma=gamma.iter[,,(iter-1)*L+l2.iter[iter]],
-    pro=pro.iter[1,],Crho=Crho[l2.iter[iter]],bic1=bic1.iter[iter,], bic2= bic2.iter[iter,], time.iter=time.iter[,iter], iter=iter))
+  
+  if(p<=5000){
+    sigma.est = sigma.iter[,,1]
+  }else{
+    sigma.est = sigma.iter[[1]]
+  }
+  
+  # 
+  if(Crho.warning[iter-1]==1){
+    warning("Crho too large. Try some smaller value")
+  }
+  
+  return(list(z=z.iter[iter,,1], mu=mu.iter[,,1], sigma=sigma.est, g=g.iter[,,1], gamma=gamma.iter[,,(iter-2)*L+l2.iter[iter-1]],
+              pro=pro.iter[1,],Crho=Crho[l2.iter[iter-1]],bic1=-bic1.iter[1:iter,], bic2= -bic2.iter[1:iter,], time.iter=time.iter[,1:iter], iter=iter))
 }
 
 
