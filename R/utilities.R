@@ -141,29 +141,29 @@ drv.fn=function(gamma,mu.tmp,sigma.tmp,rho.tmp){
 #sigmahat
 sigma.est.fn = function(mu, g, alpha ,n, p, K, n.inv){
   matrix(.Fortran("sigma_est", mu, g, alpha, n, p, K, n.inv, 
-    ret=double(p * p))$ret, p, p)
+                  ret=double(p * p))$ret, p, p)
   # return(alpha[index]*(1/n.smp)*((g[index,] - mu)%*%t(g[index,] - mu)))
 }
 
 #sigmahat 
 #for large matrix
-sigma.est.fn.large = function(mu, g, alpha ,n, p, K, n.inv){
-  sep_p = split(seq(p),rep(seq(ceiling(p/1000)),each = 1000)[seq(p)])
-  sigma = big.matrix(p, p, type = "short", init = 0)
-  for(i in 1:length(sep_p)){
-    sigma[sep_p[[i]],sep_p[[i]]] = matrix(.Fortran("sigma_est", mu[,sep_p[[i]]], g[,sep_p[[i]]], alpha, n, 
-      length(sep_p[[i]]), K, n.inv, ret=double(length(sep_p[[i]]) * length(sep_p[[i]])))$ret, 
-      length(sep_p[[i]]), length(sep_p[[i]]))
-  }
-  return(sigma)
-  # return(alpha[index]*(1/n.smp)*((g[index,] - mu)%*%t(g[index,] - mu)))
-}
+#sigma.est.fn.large = function(mu, g, alpha ,n, p, K, n.inv){
+#  sep_p = split(seq(p),rep(seq(ceiling(p/1000)),each = 1000)[seq(p)])
+#  sigma = big.matrix(p, p, type = "short", init = 0)
+#  for(i in 1:length(sep_p)){
+#    sigma[sep_p[[i]],sep_p[[i]]] = matrix(.Fortran("sigma_est", mu[,sep_p[[i]]], g[,sep_p[[i]]], alpha, n, 
+#                                                   length(sep_p[[i]]), K, n.inv, ret=double(length(sep_p[[i]]) * length(sep_p[[i]])))$ret, 
+#                                          length(sep_p[[i]]), length(sep_p[[i]]))
+#  }
+#  return(sigma)
+#  # return(alpha[index]*(1/n.smp)*((g[index,] - mu)%*%t(g[index,] - mu)))
+#}
 
 
 #zhat
 z.fn = function(g.tmp, mu.tmp, pro.tmp, gamma.tmp, n, p, K){
   ret = matrix(.Fortran("z_fn", g.tmp, mu.tmp, pro.tmp, gamma.tmp, 
-    n, p, K, ret=double(n*K))$ret, nrow=n, ncol=K)
+                        n, p, K, ret=double(n*K))$ret, nrow=n, ncol=K)
   apply(ret, 1, which.min)
 }
 
@@ -260,12 +260,16 @@ derivative.pen = function(u, lambda, a = 3.7) {
 }
 
 initial.sc = function(y,K,nstart=10){
-  A = t(y)%*%y
+  
+  A = y%*%t(y)
   eig.A = eigen(A)
-  U0 = eig.A$vectors[,1:K]
-  km.result = kmeans(y%*%U0,centers = K,nstart = nstart)
+  D0 = diag((eig.A$values+eig.A$values[1]*0.05)^(-1/2))
+  eig.A.adj = eigen(D0%*%A%*%D0)
+  V = eig.A.adj$vectors[,1:2]
+  D = diag(eig.A.adj$values[1:2])
+  km.result = kmeans(V%*%D,centers = K,nstart = 10)
   sc.select = km.result$cluster
-  sc.mean = t(U0%*%t(km.result$centers))
+  sc.mean = t(t(y)%*%V%*%solve(D)%*%t(km.result$centers))
   
   return(list(z.initial=sc.select,mu.initial=sc.mean))
   
