@@ -41,8 +41,8 @@
 ##cesme with SCAD
 #BIC twice
 cesme = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=NULL, mu.initial=NULL,
-                 maxit_msda=as.integer(1e+3), eps_msda=1e-4, ncvx=TRUE,Crho = 2^seq(4,-4,-1),
-                 sanity.check=FALSE, lam_max_print=FALSE, g.method=1, kmnstart=10) {
+                         maxit_msda=as.integer(1e+3), eps_msda=1e-4, ncvx=TRUE,Crho = 2^seq(4,-4,-1),
+                         sanity.check=FALSE, lam_max_print=FALSE, g.method=1, kmnstart=10) {
   
   # g.method = 1 empirical cdf
   # g.method = 2 shaped restricted regression
@@ -104,16 +104,37 @@ cesme = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=NULL, mu
   
   rho.iter = c(C0 + C2 * sqrt(log(p)*n.inv), rep(0,N))
   
-  ## initialized by SC
-  if(is.null(z.initial)||is.null(mu.initial)){
-    sc.result = initial.sc(y, K, nstart=kmnstart)
+  ## cutoff in estimating g
+  if (is.null(thre)) {
+    thre <- 1 / (4 * n.smp^0.25 * sqrt(pi * log(n.smp)))
   }
+  delta0 = thre
+  ## 1/(4*(n.smp)^0.25 * sqrt(pi * log(n.smp)))
   
-  if(is.null(z.initial)){
-    z.iter[1,,1] = sc.result$z.initial
-  }else{
-    z.iter[1,,1] = z.initial
+  ## initialized by SC
+  prob1 = matrix(NA,n.smp,p)
+  y_rank = matrix(0L, n.smp, p)
+  for (j in seq(p)) {
+    y_rank[,j] = rank(y[,j])
   }
+  ct = rep(0L, n.smp)
+  for (j in seq(p)) {
+    ct[1] = 1L
+    for (i in seq(2, n.smp)) {
+      ct[i] = ct[i-1] + 1
+    }
+    for (i in seq(n.smp)) {
+      prob1[i, j] = ct[y_rank[i, j]] /n.smp
+    }
+  }
+  prob1[is.na(prob1)]=0
+  one_minus_delta0 = 1 - delta0
+  y1 = qnorm(ifelse(prob1 <= delta0, delta0,
+                    ifelse(prob1 > one_minus_delta0, one_minus_delta0, prob1)))
+  
+  sc.result = initial.sc(y1, K, nstart=kmnstart)
+  z.iter[1,,1] = sc.result$z.initial
+  
   
   if ((length(unique(z.iter[1,,1])) < K) || (min(table(z.iter[1,,1])) < 2L)) {
     miss_z = setdiff(seq(K), unique(z.iter[1,,1]))
@@ -126,11 +147,7 @@ cesme = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=NULL, mu
   
   pro.iter[1,] = as.numeric(table(z.iter[1,,1]) * n.inv)
   
-  if (is.null(thre)) {
-    thre <- 1 / (4 * n.smp^0.25 * sqrt(pi * log(n.smp)))
-  }
-  delta0 = thre
-  ## 1/(4*(n.smp)^0.25 * sqrt(pi * log(n.smp)))
+
   
   alpha.temp = array(0, dim=c(L+1, n.smp, K))
   
@@ -171,12 +188,7 @@ cesme = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=NULL, mu
   g.iter[,,1] = t((t(g.iter[,,1])-apply(t(g.iter[,,1]),1,mean))/(apply(t(g.iter[,,1]),1,sd)+1e-4))
   
   ## ## starting value for mu
-  #center2.g = g.iter[,,1]
-  if(is.null(mu.initial)){
-    mu.iter[,,1] = sc.result$mu.initial
-  }else{
-    mu.iter[,,1] = mu.initial
-  }
+  mu.iter[,,1] = sc.result$mu.initial
   
   ## starting value for variance
   #sigma.iter[,,1] = (n.smp-1L) * cov(center2.g) * n.inv
@@ -186,9 +198,9 @@ cesme = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=NULL, mu
                                    g=g.iter[,,1], alpha=alpha.int, 
                                    n=n.smp, p=p, K=K, n.inv=n.inv)
   }else{
-    sigma.est.fn.large(mu=mu.iter[seq(K),,1], 
-                       g=g.iter[,,1], alpha=alpha.int, 
-                       n=n.smp, p=p, K=K, n.inv=n.inv)
+    sigma.iter[[1]] = sigma.est.fn(mu=mu.iter[,,1], 
+                                   g=g.iter[,,1], alpha=alpha.int, 
+                                   n=n.smp, p=p, K=K, n.inv=n.inv)
   }
   
   ## apply(simplify2array(sapply(c(1:n.smp), 
@@ -244,7 +256,7 @@ cesme = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=NULL, mu
       if(p<=5000){
         sigma = sigma.iter[,,i]
       }else{
-        sigma.iter[[i]]
+        sigma = sigma.iter[[i]]
       }
       
       dSigma = diag(sigma)+1e-2
@@ -323,8 +335,8 @@ cesme = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=NULL, mu
         outlist = formatoutput(fit, maxit_msda, pmax, p, vnames, nk)
       }
       
-      llh0 = -log(prod(dSigma))/2-sum((g.iter[,,1]-mu.iter[1,,i])^2/dSigma)/2
-      #llh0 = 0
+      #llh0 = -log(prod(dSigma))/2-sum((g.iter[,,1]-mu.iter[1,,i])^2/dSigma)/2
+      llh0 = 0
       
       ############################################################################
       for(l in seq(fit$nalam)){
@@ -370,9 +382,9 @@ cesme = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=NULL, mu
             }}
             
             for(k in 1:K){
-              #yid = z2.iter[i,,l]==k
+              yid = z2.iter[i,,l]==k
               ## ytmp = g.iter[yid,,iter]
-              llh = llh + sum(-logw.tmp[,k]*pro.tmp[k])
+              llh = llh + sum(-logw.tmp[yid,k])
             }  
             
             bic3.iter[i,l] = -2 * llh + log(max(n.smp,p)) * (outlist$df[l]+K*p+p^2)
@@ -409,9 +421,9 @@ cesme = function(y, K, thre=NULL, N=100, C0=1, C2=1, kap=0.8, z.initial=NULL, mu
                        n=n.smp, p=p, K=K, n.inv=n.inv)
       }else{
         sigma.iter[[i+1]] = 
-          sigma.est.fn.large(mu=mu.iter[seq(K),,i+1], 
-                             g=g.iter[,,1], alpha=alpha.temp[l,,seq(K)], 
-                             n=n.smp, p=p, K=K, n.inv=n.inv)
+          sigma.est.fn(mu=mu.iter[seq(K),,i+1], 
+                       g=g.iter[,,1], alpha=alpha.temp[l,,seq(K)], 
+                       n=n.smp, p=p, K=K, n.inv=n.inv)
       }
       
       tt2 = Sys.time()
