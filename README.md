@@ -1,2 +1,2 @@
 # cesme
-The CESME method includes Fortran code that requires compilation. To use it in R, users must download the full package and install it using standard R installation tools (e.g., install.packages() or devtools::install()).
+CESME includes Fortran routines that need to be compiled during installation. To run CESME in R, users should download the complete package and install it using install.packages(path_to_tar.gz, repos = NULL, type = "source") or with devtools::install() if installing from a Git repository.
