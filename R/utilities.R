@@ -265,8 +265,8 @@ initial.sc = function(y,K,nstart=10){
   eig.A = eigen(A)
   D0 = diag((eig.A$values+eig.A$values[1]*0.05)^(-1/2))
   eig.A.adj = eigen(D0%*%A%*%D0)
-  V = eig.A.adj$vectors[,1:2]
-  D = diag(eig.A.adj$values[1:2])
+  V = eig.A$vectors[,1:K]
+  D = diag(eig.A$values[1:K]*0.05+eig.A$values[1])
   km.result = kmeans(V%*%D,centers = K,nstart = 10)
   sc.select = km.result$cluster
   sc.mean = t(t(y)%*%V%*%solve(D)%*%t(km.result$centers))
@@ -274,5 +274,6 @@ initial.sc = function(y,K,nstart=10){
   return(list(z.initial=sc.select,mu.initial=sc.mean))
   
 }
+
 
 
