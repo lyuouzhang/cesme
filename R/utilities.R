@@ -259,15 +259,16 @@ derivative.pen = function(u, lambda, a = 3.7) {
     (u > lambda) * (u <= a * lambda)
 }
 
-initial.sc = function(y,K,alpha=0.05,nstart=10){
+initial.sc = function(y,K,nstart=20){
   
-  A = y%*%t(y)
+  A = tcrossprod(y)
   eig.A = eigen(A)
   V = eig.A$vectors[,1:K]
-  D = diag(sqrt(eig.A$values[1:K])/sqrt(eig.A$values[1:K]+eig.A$values[1]*alpha))
-  km.result = kmeans(V%*%D,centers = K,nstart = 20)
+  D = diag(sqrt(eig.A$values[1:K])/sqrt(eig.A$values[1:K]+eig.A$values[1]*0.05))
+  D_inv = diag(1/diag(D))
+  km.result = kmeans(V%*%D,centers = K,nstart = nstart)
   sc.select = km.result$cluster
-  sc.mean = t(t(y)%*%V%*%solve(D)%*%t(km.result$centers))
+  sc.mean = t(crossprod(y,V)%*%D_inv%*%t(km.result$centers))
   
   return(list(z.initial=sc.select,mu.initial=sc.mean))
   
